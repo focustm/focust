@@ -12,14 +12,9 @@
     const MIME = 'video/mp4; codecs="avc1.42E01E"';
 
     alert(
-        "MSE: " + !!window.MediaSource +
-        "\nCodec: " +
-        (
-            window.MediaSource
-                ? MediaSource.isTypeSupported(MIME)
-                : false
-        )
-    );
+    "MediaSource: " + !!window.MediaSource +
+    "\nManagedMediaSource: " + !!window.ManagedMediaSource
+);
 
     let video = document.getElementById("rawWsVideo");
 
