@@ -9,6 +9,42 @@
 <body>
 <script>
 (() => {
+    const MIME = 'video/mp4; codecs="avc1.42E01E"';
+
+    alert(
+        "MSE: " + !!window.MediaSource +
+        "\nCodec: " +
+        (
+            window.MediaSource
+                ? MediaSource.isTypeSupported(MIME)
+                : false
+        )
+    );
+
+    let video = document.getElementById("rawWsVideo");
+
+    if (!video) {
+        video = document.createElement("video");
+        video.id = "rawWsVideo";
+
+        video.autoplay = true;
+        video.muted = true;
+        video.controls = true;
+        video.playsInline = true;
+
+        video.setAttribute("playsinline","");
+        video.setAttribute("webkit-playsinline","");
+        video.setAttribute("muted","");
+
+        video.style.width = "100%";
+        video.style.background = "black";
+
+        document.body.prepend(video);
+    }
+
+    console.log("Video element prepared for iPhone");
+})();
+(() => {
     //const WS_URL = "wss://localnet3.focust.io:6443/websocket_connect?srvid=1&code=nSzfrRQeVQuTaDDgH8rg&sock_addr=1640677507078";
 	//const WS_URL = "wss://localnet3.focust.io:6443/websocket_connect?srvid=1&code=nSzfrRQeVQuTaDDgH8rg&sock_addr=1636382539792";
 	const WS_URL = "wss://test01.focust.io:6443/websocket_connect?srvid=1&code=nSzfrRQeVQuTaDDgH8rg&sock_addr=9869834848468";
