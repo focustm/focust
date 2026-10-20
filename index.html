@@ -10,30 +10,25 @@
         html,
         body {
             margin: 0;
-            padding: 0;
-
-            width: 100%;
-            height: 100%;
-
-            overflow: hidden;
-
-            background: black;
+			padding: 0;
+			width: 100vw;
+			height: 100vh;
+			overflow: hidden;
+			background: black;
         }
+		
+		body {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+		}
 
         #rawWsVideo {
-            width: auto;
-            height: auto;
-
-            max-width: 95vw;
-            max-height: 90vh;
-
-            object-fit: contain;
-
-            background: black;
-
-            display: block;
-
-            margin: 0 auto;
+            width: 100vw;
+			height: 100vh;
+			object-fit: contain;
+			display: block;
+			background: black;
         }
     </style>
 </head>
