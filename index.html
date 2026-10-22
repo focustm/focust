@@ -2,41 +2,784 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
     <title>FocusT Video Test</title>
 
     <style>
-        html, body {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            background: black;
-        }
-
+        html,
         body {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-            font-family: Arial, sans-serif;
-            color: white;
+            margin: 0;
+			padding: 0;
+			width: 100vw;
+			height: 100vh;
+			overflow: hidden;
+			background: black;
         }
+		
+		body {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+		}
 
-        .message {
-            font-size: 28px;
-            line-height: 1.5;
-            padding: 20px;
+        #rawWsVideo {
+            width: 100vw;
+			height: 100vh;
+			object-fit: contain;
+			display: block;
+			background: black;
         }
     </style>
 </head>
 
 <body>
 
-<div class="message">
-    Testing Video ended.<br>
-    We will inform for next tests.
-</div>
+<script>
+(() => {
+    const WS_URL = "wss://test01.focust.io:6443/websocket_connect?srvid=1&code=nSzfrRQeVQuTaDDgH8rg&sock_addr=9869834848468";
+
+    const MIME = 'video/mp4; codecs="avc1.42E01E"';
+
+    const KEEP_BEHIND_SECONDS = 30;
+
+    const LIVE_DELAY = 20.0;
+    const MAX_LIVE_DELAY = 25.0;
+
+
+    const MediaSourceClass =
+        window.MediaSource ||
+        window.ManagedMediaSource;
+
+
+    if (!MediaSourceClass) {
+        alert(
+            "This browser does not support MediaSource or ManagedMediaSource"
+        );
+
+        return;
+    }
+
+
+    if (
+        MediaSourceClass.isTypeSupported &&
+        !MediaSourceClass.isTypeSupported(MIME)
+    ) {
+        alert(
+            "Video codec is not supported: " +
+            MIME
+        );
+
+        return;
+    }
+
+
+    if (window.rawWsMseTestStop) {
+        window.rawWsMseTestStop();
+    }
+
+
+    let video =
+        document.getElementById(
+            "rawWsVideo"
+        );
+
+
+    if (!video) {
+
+        video =
+            document.createElement(
+                "video"
+            );
+
+        video.id =
+            "rawWsVideo";
+
+        video.autoplay = true;
+        video.muted = true;
+        video.controls = true;
+        video.playsInline = true;
+
+        video.disableRemotePlayback = true;
+
+        video.setAttribute(
+            "playsinline",
+            ""
+        );
+
+        video.setAttribute(
+            "webkit-playsinline",
+            ""
+        );
+
+        video.setAttribute(
+            "muted",
+            ""
+        );
+
+
+        video.style.width =
+            "auto";
+
+        video.style.height =
+            "auto";
+
+        video.style.maxWidth =
+            "95vw";
+
+        video.style.maxHeight =
+            "90vh";
+
+        video.style.objectFit =
+            "contain";
+
+        video.style.background =
+            "black";
+
+        video.style.display =
+            "block";
+
+        video.style.margin =
+            "0 auto";
+
+
+        document.body.prepend(
+            video
+        );
+    }
+
+
+    const mediaSource =
+        new MediaSourceClass();
+
+
+    let sourceBuffer = null;
+    let socket = null;
+
+
+    const queue = [];
+
+    const recentChunks = [];
+
+
+    let receivedMessages = 0;
+    let totalReceived = 0;
+
+    let initialSeekDone = false;
+
+    let stopped = false;
+
+
+    video.src =
+        URL.createObjectURL(
+            mediaSource
+        );
+
+
+    function dumpRecentChunks()
+    {
+        if (
+            recentChunks.length < 1
+        ) {
+            return;
+        }
+
+
+        console.log(
+            "Dumping last WebSocket chunks:",
+            recentChunks.map(
+                x => x.byteLength
+            )
+        );
+
+
+        const blob =
+            new Blob(
+                recentChunks,
+                {
+                    type:
+                        "application/octet-stream"
+                }
+            );
+
+
+        const url =
+            URL.createObjectURL(
+                blob
+            );
+
+
+        const a =
+            document.createElement(
+                "a"
+            );
+
+
+        a.href =
+            url;
+
+        a.download =
+            "last_5_chunks.bin";
+
+
+        document.body.appendChild(
+            a
+        );
+
+        a.click();
+
+        a.remove();
+
+
+        setTimeout(
+            () =>
+                URL.revokeObjectURL(
+                    url
+                ),
+            1000
+        );
+    }
+
+
+    function stopTest()
+    {
+        if (stopped) {
+            return;
+        }
+
+
+        stopped = true;
+
+
+        if (
+            socket &&
+            (
+                socket.readyState ===
+                    WebSocket.OPEN ||
+                socket.readyState ===
+                    WebSocket.CONNECTING
+            )
+        ) {
+            socket.close();
+        }
+
+
+        console.log(
+            "Test stopped"
+        );
+    }
+
+
+    window.rawWsMseTestStop =
+        stopTest;
+
+
+    function appendNext()
+    {
+        if (stopped) {
+            return;
+        }
+
+
+        if (!sourceBuffer) {
+            return;
+        }
+
+
+        if (
+            sourceBuffer.updating
+        ) {
+            return;
+        }
+
+
+        if (
+            queue.length < 1
+        ) {
+            return;
+        }
+
+
+        const data =
+            queue.shift();
+
+
+        try {
+
+            console.log(
+                "appendBuffer:",
+                data.byteLength,
+                "bytes"
+            );
+
+
+            sourceBuffer.appendBuffer(
+                data
+            );
+
+        }
+        catch (e) {
+
+            console.error(
+                "appendBuffer ERROR:",
+                e
+            );
+
+
+            console.log(
+                "data size:",
+                data.byteLength
+            );
+
+
+            dumpRecentChunks();
+
+            stopTest();
+        }
+    }
+
+
+    function removeOldBufferIfNeeded()
+    {
+        if (!sourceBuffer) {
+            return false;
+        }
+
+
+        if (
+            sourceBuffer.updating
+        ) {
+            return false;
+        }
+
+
+        if (
+            sourceBuffer.buffered.length <
+            1
+        ) {
+            return false;
+        }
+
+
+        if (
+            video.currentTime <=
+            KEEP_BEHIND_SECONDS
+        ) {
+            return false;
+        }
+
+
+        const bufferedStart =
+            sourceBuffer.buffered.start(
+                0
+            );
+
+
+        const removeEnd =
+            video.currentTime -
+            KEEP_BEHIND_SECONDS;
+
+
+        if (
+            removeEnd <=
+            bufferedStart
+        ) {
+            return false;
+        }
+
+
+        console.log(
+            "Removing old buffer:",
+            bufferedStart,
+            "->",
+            removeEnd
+        );
+
+
+        try {
+
+            sourceBuffer.remove(
+                bufferedStart,
+                removeEnd
+            );
+
+
+            return true;
+
+        }
+        catch (e) {
+
+            console.error(
+                "SourceBuffer.remove ERROR:",
+                e
+            );
+
+
+            return false;
+        }
+    }
+
+
+    mediaSource.addEventListener(
+        "sourceopen",
+        () => {
+
+            console.log(
+                "MediaSource OPEN:",
+                window.MediaSource &&
+                mediaSource instanceof
+                    window.MediaSource
+                    ?
+                    "MediaSource"
+                    :
+                    "ManagedMediaSource"
+            );
+
+
+            sourceBuffer =
+                mediaSource.addSourceBuffer(
+                    MIME
+                );
+
+
+            sourceBuffer.mode =
+                "segments";
+
+
+            console.log(
+                "SourceBuffer CREATED"
+            );
+
+
+            sourceBuffer.addEventListener(
+                "updateend",
+                () => {
+
+                    if (
+                        sourceBuffer.buffered.length >
+                        0
+                    ) {
+
+                        const bufferedEnd =
+                            sourceBuffer.buffered.end(
+                                sourceBuffer.buffered.length -
+                                1
+                            );
+
+
+                        const delay =
+                            bufferedEnd -
+                            video.currentTime;
+
+
+                        console.log(
+                            "currentTime:",
+                            video.currentTime,
+                            "bufferedEnd:",
+                            bufferedEnd,
+                            "delay:",
+                            delay
+                        );
+
+
+                        if (
+                            initialSeekDone &&
+                            delay >
+                            MAX_LIVE_DELAY
+                        ) {
+
+                            video.currentTime =
+                                Math.max(
+                                    sourceBuffer.buffered.start(
+                                        sourceBuffer.buffered.length -
+                                        1
+                                    ),
+                                    bufferedEnd -
+                                    LIVE_DELAY
+                                );
+
+
+                            console.log(
+                                "Jump to live edge:",
+                                video.currentTime
+                            );
+                        }
+                    }
+
+
+                    if (
+                        !initialSeekDone &&
+                        sourceBuffer.buffered.length >
+                        0
+                    ) {
+
+                        initialSeekDone =
+                            true;
+
+
+                        const bufferedEnd =
+                            sourceBuffer.buffered.end(
+                                sourceBuffer.buffered.length -
+                                1
+                            );
+
+
+                        video.currentTime =
+                            Math.max(
+                                sourceBuffer.buffered.start(
+                                    sourceBuffer.buffered.length -
+                                    1
+                                ),
+                                bufferedEnd -
+                                LIVE_DELAY
+                            );
+                    }
+
+
+                    if (
+                        video.paused
+                    ) {
+
+                        video.play().catch(
+                            e =>
+                                console.warn(
+                                    "video.play() failed:",
+                                    e
+                                )
+                        );
+                    }
+
+
+                    if (
+                        removeOldBufferIfNeeded()
+                    ) {
+                        return;
+                    }
+
+
+                    appendNext();
+                }
+            );
+
+
+            sourceBuffer.addEventListener(
+                "error",
+                e => {
+
+                    console.error(
+                        "SourceBuffer ERROR:",
+                        e
+                    );
+
+
+                    dumpRecentChunks();
+
+                    stopTest();
+                }
+            );
+
+
+            socket =
+                new WebSocket(
+                    WS_URL
+                );
+
+
+            socket.binaryType =
+                "arraybuffer";
+
+
+            window.rawWsSocket =
+                socket;
+
+
+            socket.onopen =
+                () => {
+
+                    console.log(
+                        "WebSocket CONNECTED"
+                    );
+                };
+
+
+            socket.onmessage =
+                event => {
+
+                    if (
+                        !(
+                            event.data instanceof
+                            ArrayBuffer
+                        )
+                    ) {
+
+                        console.warn(
+                            "Unexpected WebSocket data:",
+                            typeof event.data
+                        );
+
+                        return;
+                    }
+
+
+                    ++receivedMessages;
+
+
+                    totalReceived +=
+                        event.data.byteLength;
+
+
+                    console.log(
+                        "WS:",
+                        receivedMessages,
+                        "size:",
+                        event.data.byteLength,
+                        "total:",
+                        totalReceived
+                    );
+
+
+                    recentChunks.push(
+                        event.data
+                    );
+
+
+                    if (
+                        recentChunks.length >
+                        5
+                    ) {
+                        recentChunks.shift();
+                    }
+
+
+                    queue.push(
+                        event.data
+                    );
+
+
+                    appendNext();
+                };
+
+
+            socket.onerror =
+                e => {
+
+                    console.error(
+                        "WebSocket ERROR:",
+                        e
+                    );
+                };
+
+
+            socket.onclose =
+                e => {
+
+                    console.warn(
+                        "WebSocket CLOSED:",
+                        e
+                    );
+                };
+        }
+    );
+
+
+    video.addEventListener(
+        "loadedmetadata",
+        () => {
+
+            console.log(
+                "VIDEO loadedmetadata",
+                {
+                    width:
+                        video.videoWidth,
+
+                    height:
+                        video.videoHeight,
+
+                    duration:
+                        video.duration
+                }
+            );
+
+
+            video.play().catch(
+                e =>
+                    console.warn(
+                        "video.play() failed:",
+                        e
+                    )
+            );
+        }
+    );
+
+
+    video.addEventListener(
+        "waiting",
+        () => {
+
+            console.log(
+                "VIDEO WAITING",
+                {
+                    currentTime:
+                        video.currentTime,
+
+                    buffered:
+                        Array.from(
+                            {
+                                length:
+                                    video.buffered.length
+                            },
+                            (_,i) => ({
+                                start:
+                                    video.buffered.start(
+                                        i
+                                    ),
+
+                                end:
+                                    video.buffered.end(
+                                        i
+                                    )
+                            })
+                        )
+                }
+            );
+        }
+    );
+
+
+    video.addEventListener(
+        "error",
+        () => {
+
+            console.error(
+                "VIDEO ERROR",
+
+                video.error
+                    ?
+                    {
+                        code:
+                            video.error.code,
+
+                        message:
+                            video.error.message
+                    }
+                    :
+                    null
+            );
+        }
+    );
+
+
+    console.log(
+        "RAW WebSocket -> MSE test initialized using",
+        window.MediaSource
+            ?
+            "MediaSource"
+            :
+            "ManagedMediaSource"
+    );
+
+})();
+</script>
 
 </body>
 </html>
